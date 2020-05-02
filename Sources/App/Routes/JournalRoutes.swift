@@ -1,106 +1,98 @@
-//
-//  JournalRoutes.swift
-//  App
-//
-//  Created by Artem Panasenko on 30.04.2020.
-//
-
 import Vapor
 import Leaf
 
-struct JournalRoutes: RouteCollection {
+struct JournalRoutes : RouteCollection {
+    
     let journal = JournalController()
+    let mainPage = "/journal/all"
+    
+    let title = "My Journal"
+    let author = "Angus"
+    
+    struct JournalContext : Encodable {
+        let title: String
+        let author: String
+        let count: String
+        let entries: [Entry]
+    }
+    
+    struct EntryContext : Encodable {
+        let title: String
+        let author: String
+        let index: Int
+        let entry: Entry
+    }
+    
     func boot(router: Router) throws {
         
-        let topRouter = router.grouped("journal") // [1]
-        topRouter.get(use: getTotal)
-        topRouter.post(use: newEntry)
+        let topRouter = router.grouped("journal")
+        topRouter.get("", use: getAll)
+        topRouter.get("all", use: getAll)
+        topRouter.get("create", use: createEntry)
+        topRouter.post("new", use: newEntry)
         
-        let entryRouter = router.grouped("journal", Int.parameter) // [2]
-        entryRouter.get(use: getEntry)
-        entryRouter.put(use: editEntry)
-        entryRouter.delete(use: removeEntry)
-
-        router.get { req -> Future<View> in // [1]
-            let leaf = try req.make(LeafRenderer.self) // [2]
-            let context = [String: String]() // [3]
-            return leaf.render("main", context) // [4]
-        }
+        let entryRouter = router.grouped("journal", Int.parameter)
+        entryRouter.get("get", use: getEntry)
+        entryRouter.post("edit", use: editEntry)
+        entryRouter.get("remove", use: removeEntry)
     }
     
     func getAll(_ req: Request) throws -> Future<View> {
-            let total = journal.total()
-            let leaf = try req.make(LeafRenderer.self)
-            let context = ["count": total]
-            return leaf.render("main", context)
-        }
-    
-    func getTotal(_ req: Request) throws -> Future<View> {
-        let title = "My Journal"
-        let author = "Angus"
-        
-         
         let total = journal.total()
+        let entries : [Entry] = journal.readAll()
         let count = "\(total)"
         let leaf = try req.make(LeafRenderer.self)
-        let context = ["title": title, "author": author, "count": count]
+        let context = JournalContext(title: title, author: author, count: count, entries: entries)
         return leaf.render("main", context)
     }
-
     
-//    func getTotal(_ req: Request) -> String {
-//        let total = journal.total()
-//        print("Total Records: \(total)")
-//        return "\(total)"
-//    }
-    
-    func newEntry(_ req: Request) throws -> Future<HTTPStatus> { // [1]
-        let newID = UUID().uuidString // [2]
-        return try req.content.decode(Entry.self).map(to: HTTPStatus.self) { entry in // [3]
-            let newEntry = Entry(id: newID,
-                                 title: entry.title,
-                                 content: entry.content) // [4]
-            guard let result = self.journal.create(newEntry) else { // [5]
-                throw Abort(.badRequest) // [6]
-            }
-            print("Created: \(result)")
-            return .ok // [7]
-        }
+    func createEntry(_ req: Request) throws -> Future<View> {
+        let leaf = try req.make(LeafRenderer.self)
+        let context = ["title": title, "author": author]
+        return leaf.render("new", context)
     }
     
-    func getEntry(_ req: Request) throws -> Entry {
-        let index = try req.parameters.next(Int.self) // [1]
-        let res = req.response() // [2]
-        guard let entry = journal.read(index: index) else {
-            throw Abort(.badRequest)
-        }
-        print("Read: \(entry)")
-        try res.content.encode(entry, as: .formData) // [3]
-        return entry
-    }
-    
-    func editEntry(_ req: Request) throws -> Future<HTTPStatus> {
-        let index = try req.parameters.next(Int.self)
+    func newEntry(_ req: Request) throws -> Future<Response> {
         let newID = UUID().uuidString
-        return try req.content.decode(Entry.self).map(to: HTTPStatus.self) { entry in // [1]
-            let newEntry = Entry(id: newID,
-                                 title: entry.title,
-                                 content: entry.content)
-            guard let result = self.journal.update(index: index, entry: newEntry) else {
-                throw Abort(.badRequest)
+        return try req.content.decode(Entry.self).map(to: Response.self) { entry in
+            if let result = self.journal.create(Entry(id: newID,
+                                                      title: entry.title,
+                                                      content: entry.content)) {
+                print("Created: \(result)")
             }
-            print("Updated: \(result)")
-            return .ok
+            return req.redirect(to: self.mainPage)
         }
     }
     
-    func removeEntry(_ req: Request) throws -> HTTPStatus {
+    func getEntry(_ req: Request) throws -> Future<View> {
         let index = try req.parameters.next(Int.self)
-        guard let result = self.journal.delete(index: index) else {
-            throw Abort(.badRequest)
+        let leaf = try req.make(LeafRenderer.self)
+        var entry = Entry(id: "-1")
+        if let result = journal.read(index: index) {
+            entry = result
         }
-        print("Deleted: \(result)")
-        return .ok
+        let context = EntryContext(title: title, author: author, index: index, entry: entry)
+        return leaf.render("entry", context)
     }
     
+    func editEntry(_ req: Request) throws -> Future<Response> {
+        let index = try req.parameters.next(Int.self)
+        return try req.content.decode(Entry.self).map(to: Response.self) { entry in
+            if let result = self.journal.update(index: index,
+                                                entry: Entry(id: entry.id,
+                                                             title: entry.title,
+                                                             content: entry.content)) {
+                print("Updated: \(result)")
+            }
+            return req.redirect(to: self.mainPage)
+        }
+    }
+
+    func removeEntry(_ req: Request) throws -> Response {
+        let index = try req.parameters.next(Int.self)
+        if let result = self.journal.delete(index: index) {
+            print("Deleted: \(result)")
+        }
+        return req.redirect(to: mainPage)
+    }
 }

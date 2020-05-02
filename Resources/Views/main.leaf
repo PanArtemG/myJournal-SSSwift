@@ -1,14 +1,15 @@
-<!DOCTYPE html>
-<html lang="en">
-    <head>
-        <meta charset="utf-8" />
-        <title>Hello World</title>
-    </head>
-    <body>
-        <h1>Hello World</h1>
-        <h1>#(title)</h1>
-        <p>Greetings, #(user). Welcome to my homepage.</p>
-        Count: #(count)
-    </body>
-</html>
-
+#embed("header")
+[ ➕ <a href="/journal/create">Add New Entry</a> ]
+<P>
+#for(entry in entries) {
+<!--Section #(index)-->
+<section class="sec#(index)" id="sec#(index)">
+<div class="Container entry">
+<h2>#(entry.title)</h2>
+#(entry.content)
+<BR> [ 📝 <a href="./#(index)/get">Edit</a> | 🗑 <a href="./#(index)/remove">Remove</a> ]
+    <BR> <em>Index:#(index) out of #(count); ID: #(entry.id);</em>
+</div>
+</section>
+}
+#embed("footer")
